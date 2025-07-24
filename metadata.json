@@ -1,0 +1,7 @@
+{
+  "name": "ScannBizz - POS System",
+  "description": "A futuristic point-of-sale application for managing stock, sales, and analytics with AI-powered insights.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
