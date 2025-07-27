@@ -47,13 +47,15 @@ const processData = (sales: Sale[]) => {
 
 const COLORS = ['#0ea5e9', '#38bdf8', '#7dd3fc', '#bae6fd', '#e0f2fe'];
 
-const ReportTemplate: React.FC<{ sales: Sale[], products: Product[], aiSummary: string | null }> = ({ sales, products, aiSummary }) => {
+import { useApp } from '../AppContext';
+
+const ReportTemplate: React.FC<{ sales: Sale[], products: Product[], aiSummary: string | null, storeName: string }> = ({ sales, products, aiSummary, storeName }) => {
     const { dailyRevenueData, topProductsData } = processData(sales);
     const totalRevenue = sales.reduce((sum, sale) => sum + sale.grandTotal, 0);
 
     return (
         <div className="bg-slate-800 p-8 text-white font-sans">
-            <h1 className="font-orbitron text-3xl text-sky-400 mb-2">Sales Report</h1>
+            <h1 className="font-orbitron text-3xl text-sky-400 mb-2">{storeName} - Sales Report</h1>
             <p className="text-slate-400 mb-6">Generated on {new Date().toLocaleDateString()}</p>
             <div className="mb-8 p-4 bg-slate-700/50 rounded-lg">
                 <h2 className="font-orbitron text-xl text-sky-300 mb-2">AI-Powered Summary</h2>
@@ -89,6 +91,7 @@ const ReportTemplate: React.FC<{ sales: Sale[], products: Product[], aiSummary: 
 
 
 export const AnalyticsPage: React.FC = () => {
+    const { user } = useApp();
     const [chartType, setChartType] = useState<'Bar' | 'Area' | 'Line'>('Bar');
     const [aiSummary, setAiSummary] = useState<string | null>(null);
     const [isGenerating, setIsGenerating] = useState(false);
@@ -208,7 +211,7 @@ export const AnalyticsPage: React.FC = () => {
             {/* Hidden div for PDF generation */}
             <div style={{ position: 'fixed', left: '-2000px', top: 0 }}>
                 <div ref={reportRef} style={{ width: '1280px' }}>
-                    <ReportTemplate sales={MOCK_SALES_HISTORY} products={MOCK_PRODUCTS} aiSummary={aiSummary}/>
+                    <ReportTemplate sales={MOCK_SALES_HISTORY} products={MOCK_PRODUCTS} aiSummary={aiSummary} storeName={user?.storeInfo?.name || 'My Store'}/>
                 </div>
             </div>
         </div>

@@ -2,9 +2,7 @@
 import { GoogleGenAI, GenerateContentResponse, Type } from "@google/genai";
 import { Sale, Product } from '../types';
 
-// IMPORTANT: In a real app, the API key would be securely managed and not hardcoded.
-// We are using process.env.API_KEY as per the instructions.
-const API_KEY = process.env.API_KEY;
+const API_KEY = "AIzaSyDD1O1vt4pv-Qe5OCBcv16icK3WA1jtBwE";
 
 // This is a mock implementation since we cannot make live API calls.
 export const generateAnalyticsSummary = async (sales: Sale[], products: Product[]): Promise<string> => {

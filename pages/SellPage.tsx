@@ -5,6 +5,7 @@ import { useApp } from '../AppContext';
 import { Card, Button, Input, Modal } from '../components/UI';
 import { ScanLine, Trash2, X, ShoppingCart, Send } from 'lucide-react';
 import BarcodeScanner from '../components/BarcodeScanner';
+import ManualEntryModal from '../components/ManualEntryModal';
 import { generateUpsellSuggestion } from '../services/geminiService';
 
 // Mock Data
@@ -90,6 +91,7 @@ export const SellPage: React.FC = () => {
     const { showToast, user } = useApp();
     const [receipt, setReceipt] = useState<SaleItem[]>([]);
     const [isScannerOpen, setIsScannerOpen] = useState(false);
+    const [isManualEntryOpen, setIsManualEntryOpen] = useState(false);
     const [isFinalizeModalOpen, setIsFinalizeModalOpen] = useState(false);
     const [isProcessingSale, setIsProcessingSale] = useState(false);
     const [upsellSuggestion, setUpsellSuggestion] = useState('');
@@ -143,33 +145,21 @@ export const SellPage: React.FC = () => {
         showToast('Receipt cleared.', 'info');
     };
 
+    const { processSale } = useApp();
+
     const handleFinalizeSale = async (payload: { items: SaleItem[]; grandTotal: number; paymentMethod: 'Cash' | 'Card'; customerPhone: string | null; }) => {
-        if (!user) {
-            showToast('You must be logged in to process a sale.', 'error');
-            return;
-        }
         setIsProcessingSale(true);
         try {
-            const response = await fetch('/.netlify/functions/processSale', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ...payload, userId: user.uid })
+            await processSale({
+                items: payload.items,
+                grandTotal: payload.grandTotal,
+                paymentMethod: payload.paymentMethod,
+                customerPhone: payload.customerPhone,
             });
-
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({ error: 'An unknown error occurred.' }));
-                throw new Error(errorData.error || 'Failed to process sale.');
-            }
-
-            const result = await response.json();
-            console.log('Sale processed:', result);
-            
             clearReceipt();
-            showToast(`Sale of $${payload.grandTotal.toFixed(2)} recorded successfully!`, 'success');
             setIsFinalizeModalOpen(false);
-
         } catch (error) {
-            showToast((error as Error).message, 'error');
+            // Error is already shown by the context
         } finally {
             setIsProcessingSale(false);
         }
@@ -221,9 +211,14 @@ export const SellPage: React.FC = () => {
             <div className="lg:col-span-1">
                  <Card className="p-6 space-y-6 sticky top-8">
                      <h2 className="font-orbitron text-2xl text-white">Actions</h2>
-                     <Button onClick={() => setIsScannerOpen(true)} className="w-full !py-4 text-lg">
-                         <ScanLine className="mr-2"/> Open Scanner
-                     </Button>
+                     <div className="grid grid-cols-2 gap-2">
+                        <Button onClick={() => setIsScannerOpen(true)} className="w-full !py-4 text-lg">
+                            <ScanLine className="mr-2"/> Scan
+                        </Button>
+                        <Button onClick={() => setIsManualEntryOpen(true)} variant="secondary" className="w-full !py-4 text-lg">
+                            Manual Entry
+                        </Button>
+                     </div>
                      <div className="text-center space-y-2">
                          <p className="text-slate-400 font-semibold">GRAND TOTAL</p>
                          <p className="font-orbitron text-5xl text-sky-400">${grandTotal.toFixed(2)}</p>
@@ -248,6 +243,12 @@ export const SellPage: React.FC = () => {
                 grandTotal={grandTotal}
                 onFinalize={handleFinalizeSale}
                 isProcessing={isProcessingSale}
+            />
+
+            <ManualEntryModal
+                isOpen={isManualEntryOpen}
+                onClose={() => setIsManualEntryOpen(false)}
+                onAdd={handleScanSuccess}
             />
         </div>
     );

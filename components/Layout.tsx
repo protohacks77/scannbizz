@@ -17,11 +17,20 @@ const NavItem: React.FC<{ item: typeof navItems[0], isMobile?: boolean }> = ({ i
     const location = useLocation();
     const isActive = location.pathname === item.path;
     return (
-        <NavLink to={item.path} className="group transition-colors duration-200">
-            <div className={`flex items-center gap-3 rounded-md p-3 ${isMobile ? 'flex-col justify-center text-xs gap-1' : ''} ${isActive ? 'bg-sky-500/20 text-sky-400' : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200'}`}>
+        <NavLink to={item.path} className="relative group transition-colors duration-200 flex items-center justify-center">
+            <div className={`flex items-center gap-3 rounded-md p-3 ${isMobile ? 'flex-col justify-center text-xs gap-1' : ''} ${isActive ? 'text-sky-400' : 'text-slate-400 hover:text-slate-200'}`}>
                 <item.icon className={`h-5 w-5 ${isActive ? 'text-sky-400' : 'text-slate-400 group-hover:text-slate-200'}`} />
                 <span className={isMobile && !isActive ? 'text-slate-500' : ''}>{item.name}</span>
             </div>
+            {isActive && isMobile && (
+                <motion.div
+                    layoutId="active-nav-indicator"
+                    className="absolute -top-1 h-1 w-10 bg-sky-400 rounded-full"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                />
+            )}
         </NavLink>
     );
 };

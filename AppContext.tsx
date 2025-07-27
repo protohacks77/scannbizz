@@ -10,7 +10,11 @@ import {
     signOut,
     User as FirebaseUser
 } from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, collection, addDoc, updateDoc, increment } from 'firebase/firestore';
+
+import { StoreInfo } from './types';
+
+import { Sale, SaleItem } from './types';
 
 interface AppContextType {
   user: User | null;
@@ -22,6 +26,9 @@ interface AppContextType {
   logout: () => void;
   verifyPin: (pin: string) => Promise<boolean>;
   showToast: (message: string, type: 'success' | 'error' | 'info') => void;
+  updateStoreInfo: (newInfo: StoreInfo) => Promise<void>;
+  processSale: (saleData: Omit<Sale, 'id' | 'timestamp'>) => Promise<void>;
+  inviteUser: (email: string, role: 'manager' | 'cashier') => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -93,6 +100,82 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setLoading(false);
     }
   };
+
+  const inviteUser = async (email: string, role: 'manager' | 'cashier') => {
+    if (!user || user.role !== 'owner') {
+        throw new Error("You don't have permission to invite users.");
+    }
+    setLoading(true);
+    try {
+        // This is a simplified invitation. In a real app, you'd use a more secure method
+        // like sending an email with a temporary password or a signup link.
+        const password = Math.random().toString(36).slice(-8);
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const { uid } = userCredential.user;
+
+        const newUser: Omit<User, 'pin'> = {
+            uid,
+            email: email!,
+            role,
+            storeInfo: user.storeInfo
+        };
+
+        await setDoc(doc(db, "users", uid), newUser);
+        showToast(`User ${email} invited as ${role}. Password: ${password}`, 'success');
+    } catch (error) {
+        const e = error as Error;
+        showToast(e.message, 'error');
+        throw e;
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  const processSale = async (saleData: Omit<Sale, 'id' | 'timestamp'>) => {
+    if (!user) throw new Error("User not authenticated");
+    setLoading(true);
+    try {
+        const salesCollection = collection(db, "users", user.uid, "sales");
+        await addDoc(salesCollection, {
+            ...saleData,
+            timestamp: new Date()
+        });
+
+        const productUpdates = saleData.items.map(item => {
+            const productRef = doc(db, "users", user.uid, "products", item.productId);
+            return updateDoc(productRef, {
+                quantity: increment(-item.quantity)
+            });
+        });
+
+        await Promise.all(productUpdates);
+
+        showToast('Sale processed successfully!', 'success');
+    } catch (error) {
+        const e = error as Error;
+        showToast(e.message, 'error');
+        throw e;
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  const updateStoreInfo = async (newInfo: StoreInfo) => {
+    if (!user) return;
+    setLoading(true);
+    try {
+        const userRef = doc(db, "users", user.uid);
+        await setDoc(userRef, { storeInfo: newInfo }, { merge: true });
+        setUser(prevUser => prevUser ? { ...prevUser, storeInfo: newInfo } : null);
+        showToast('Store information updated successfully!', 'success');
+    } catch (error) {
+        const e = error as Error;
+        showToast(e.message, 'error');
+        throw e;
+    } finally {
+        setLoading(false);
+    }
+  };
   
   const signup = async (email: string, pass: string, pin: string) => {
     setLoading(true);
@@ -153,7 +236,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   return (
-    <AppContext.Provider value={{ user, isAuthenticated: !!user, isPinVerified, loading, login, signup, logout, verifyPin, showToast }}>
+    <AppContext.Provider value={{ user, isAuthenticated: !!user, isPinVerified, loading, login, signup, logout, verifyPin, showToast, updateStoreInfo, processSale, inviteUser }}>
       <Toaster toasts={toasts} onDismiss={removeToast} />
       {children}
     </AppContext.Provider>

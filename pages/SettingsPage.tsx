@@ -4,6 +4,41 @@ import { useApp } from '../AppContext';
 import { Card, Button, Input } from '../components/UI';
 import { Store, Shield, Users, Palette, Bell } from 'lucide-react';
 
+const InviteUserForm: React.FC = () => {
+    const { inviteUser } = useApp();
+    const [email, setEmail] = useState('');
+    const [role, setRole] = useState<'manager' | 'cashier'>('cashier');
+
+    const handleInvite = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (email) {
+            await inviteUser(email, role);
+            setEmail('');
+        }
+    };
+
+    return (
+        <form onSubmit={handleInvite} className="flex gap-2">
+            <Input
+                type="email"
+                placeholder="Invite member by email..."
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                required
+            />
+            <select
+                value={role}
+                onChange={e => setRole(e.target.value as 'manager' | 'cashier')}
+                className="bg-slate-700 text-white rounded-md px-2"
+            >
+                <option value="cashier">Cashier</option>
+                <option value="manager">Manager</option>
+            </select>
+            <Button type="submit">Invite</Button>
+        </form>
+    );
+};
+
 export const SettingsPage: React.FC = () => {
     const { user, logout, showToast } = useApp();
     const [storeInfo, setStoreInfo] = useState(user?.storeInfo || { name: '', address: '', phone: '' });
@@ -13,10 +48,11 @@ export const SettingsPage: React.FC = () => {
         setStoreInfo({ ...storeInfo, [e.target.name]: e.target.value });
     };
 
-    const handleSaveStoreInfo = (e: React.FormEvent) => {
+    const { updateStoreInfo } = useApp();
+
+    const handleSaveStoreInfo = async (e: React.FormEvent) => {
         e.preventDefault();
-        // In real app, update user document in Firestore
-        showToast('Store information updated!', 'success');
+        await updateStoreInfo(storeInfo);
     };
     
     const handlePasswordChange = (e: React.FormEvent) => {
@@ -102,27 +138,19 @@ export const SettingsPage: React.FC = () => {
                     </Card>
 
                     {/* Team Management */}
-                     <Card>
-                        <div className="p-4 border-b border-slate-700">
-                            <h2 className="font-orbitron text-xl text-sky-400 flex items-center gap-2"><Users/> Team Management</h2>
-                        </div>
-                        <div className="p-6 space-y-4">
-                             <div className="flex gap-2">
-                                <Input placeholder="Invite member by email..." />
-                                <Button>Invite</Button>
+                     {user?.role === 'owner' && (
+                        <Card>
+                            <div className="p-4 border-b border-slate-700">
+                                <h2 className="font-orbitron text-xl text-sky-400 flex items-center gap-2"><Users/> Team Management</h2>
                             </div>
-                            <div className="space-y-2">
-                                <div className="flex justify-between items-center p-2 bg-slate-800 rounded">
-                                    <p>manager@scann.bizz</p>
-                                    <p className="text-sm bg-sky-500/20 text-sky-300 px-2 py-1 rounded">Manager</p>
-                                </div>
-                                <div className="flex justify-between items-center p-2 bg-slate-800 rounded">
-                                    <p>cashier@scann.bizz</p>
-                                    <p className="text-sm bg-green-500/20 text-green-300 px-2 py-1 rounded">Cashier</p>
+                            <div className="p-6 space-y-4">
+                                <InviteUserForm />
+                                <div className="space-y-2">
+                                    {/* TODO: List invited users */}
                                 </div>
                             </div>
-                        </div>
-                    </Card>
+                        </Card>
+                     )}
 
                 </div>
             </div>
