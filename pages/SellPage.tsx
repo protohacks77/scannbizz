@@ -8,17 +8,6 @@ import BarcodeScanner from '../components/BarcodeScanner';
 import ManualEntryModal from '../components/ManualEntryModal';
 import { generateUpsellSuggestion } from '../services/geminiService';
 
-// Mock Data
-const MOCK_PRODUCTS: Product[] = [
-    { id: 'p1', name: 'Cosmic Coffee', barcode: '123456789', price: 3.50, quantity: 8, lowStockThreshold: 10 },
-    { id: 'p2', name: 'Stardust Donut', barcode: '987654321', price: 2.50, quantity: 25, lowStockThreshold: 15 },
-    { id: 'p3', name: 'Galaxy Muffin', barcode: '112233445', price: 3.00, quantity: 4, lowStockThreshold: 5 },
-    { id: 'p4', name: 'Nebula Nectar', barcode: '556677889', price: 4.75, quantity: 30, lowStockThreshold: 10 },
-    { id: 'p5', name: 'Meteor Munchies', barcode: '998877665', price: 5.20, quantity: 0, lowStockThreshold: 5 },
-    { id: 'p6', name: 'Butter', barcode: '0001', price: 1.50, quantity: 50, lowStockThreshold: 10 },
-    { id: 'p7', name: 'Soda', barcode: '0002', price: 2.00, quantity: 100, lowStockThreshold: 20 },
-];
-
 const FinalizeSaleModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
@@ -88,7 +77,8 @@ const FinalizeSaleModal: React.FC<{
 
 
 export const SellPage: React.FC = () => {
-    const { showToast, user } = useApp();
+    const { showToast, user, getProducts } = useApp();
+    const [products, setProducts] = useState<Product[]>([]);
     const [receipt, setReceipt] = useState<SaleItem[]>([]);
     const [isScannerOpen, setIsScannerOpen] = useState(false);
     const [isManualEntryOpen, setIsManualEntryOpen] = useState(false);
@@ -96,8 +86,20 @@ export const SellPage: React.FC = () => {
     const [isProcessingSale, setIsProcessingSale] = useState(false);
     const [upsellSuggestion, setUpsellSuggestion] = useState('');
 
+    useEffect(() => {
+        const fetchProducts = async () => {
+            try {
+                const userProducts = await getProducts();
+                setProducts(userProducts);
+            } catch (error) {
+                showToast((error as Error).message, 'error');
+            }
+        };
+        fetchProducts();
+    }, [getProducts, showToast]);
+
     const findProductByBarcode = (barcode: string): Product | undefined => {
-        return MOCK_PRODUCTS.find(p => p.barcode === barcode);
+        return products.find(p => p.barcode === barcode);
     };
 
     const addToReceipt = (product: Product) => {

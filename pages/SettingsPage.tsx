@@ -7,34 +7,55 @@ import { Store, Shield, Users, Palette, Bell } from 'lucide-react';
 const InviteUserForm: React.FC = () => {
     const { inviteUser } = useApp();
     const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [pin, setPin] = useState('');
     const [role, setRole] = useState<'manager' | 'cashier'>('cashier');
 
     const handleInvite = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (email) {
-            await inviteUser(email, role);
+        if (email && password && pin) {
+            await inviteUser(email, password, pin, role);
             setEmail('');
+            setPassword('');
+            setPin('');
         }
     };
 
     return (
-        <form onSubmit={handleInvite} className="flex gap-2">
-            <Input
-                type="email"
-                placeholder="Invite member by email..."
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                required
-            />
-            <select
-                value={role}
-                onChange={e => setRole(e.target.value as 'manager' | 'cashier')}
-                className="bg-slate-700 text-white rounded-md px-2"
-            >
-                <option value="cashier">Cashier</option>
-                <option value="manager">Manager</option>
-            </select>
-            <Button type="submit">Invite</Button>
+        <form onSubmit={handleInvite} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Input
+                    type="email"
+                    placeholder="Email"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    required
+                />
+                <select
+                    value={role}
+                    onChange={e => setRole(e.target.value as 'manager' | 'cashier')}
+                    className="bg-slate-700 text-white rounded-md px-2 h-10"
+                >
+                    <option value="cashier">Cashier</option>
+                    <option value="manager">Manager</option>
+                </select>
+                <Input
+                    type="password"
+                    placeholder="Password"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    required
+                />
+                <Input
+                    type="text"
+                    placeholder="PIN"
+                    value={pin}
+                    onChange={e => setPin(e.target.value)}
+                    required
+                    maxLength={4}
+                />
+            </div>
+            <Button type="submit" className="w-full">Invite User</Button>
         </form>
     );
 };

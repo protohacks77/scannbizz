@@ -10,11 +10,13 @@ import {
     signOut,
     User as FirebaseUser
 } from 'firebase/auth';
-import { doc, setDoc, getDoc, collection, addDoc, updateDoc, increment } from 'firebase/firestore';
+import { doc, setDoc, getDoc, collection, addDoc, updateDoc, increment, getDocs } from 'firebase/firestore';
 
 import { StoreInfo } from './types';
 
 import { Sale, SaleItem } from './types';
+
+import { Product } from './types';
 
 interface AppContextType {
   user: User | null;
@@ -28,7 +30,8 @@ interface AppContextType {
   showToast: (message: string, type: 'success' | 'error' | 'info') => void;
   updateStoreInfo: (newInfo: StoreInfo) => Promise<void>;
   processSale: (saleData: Omit<Sale, 'id' | 'timestamp'>) => Promise<void>;
-  inviteUser: (email: string, role: 'manager' | 'cashier') => Promise<void>;
+  inviteUser: (email: string, pass: string, pin: string, role: 'manager' | 'cashier') => Promise<void>;
+  getProducts: () => Promise<Product[]>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -101,27 +104,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const inviteUser = async (email: string, role: 'manager' | 'cashier') => {
+  const getProducts = async (): Promise<Product[]> => {
+    if (!user) throw new Error("User not authenticated");
+    const productsCollection = collection(db, "users", user.uid, "products");
+    const snapshot = await getDocs(productsCollection);
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
+  };
+
+  const inviteUser = async (email: string, pass: string, pin: string, role: 'manager' | 'cashier') => {
     if (!user || user.role !== 'owner') {
         throw new Error("You don't have permission to invite users.");
     }
     setLoading(true);
     try {
-        // This is a simplified invitation. In a real app, you'd use a more secure method
-        // like sending an email with a temporary password or a signup link.
-        const password = Math.random().toString(36).slice(-8);
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
         const { uid } = userCredential.user;
 
-        const newUser: Omit<User, 'pin'> = {
+        const newUser: User = {
             uid,
             email: email!,
             role,
+            pin,
             storeInfo: user.storeInfo
         };
 
         await setDoc(doc(db, "users", uid), newUser);
-        showToast(`User ${email} invited as ${role}. Password: ${password}`, 'success');
+        showToast(`User ${email} invited as ${role}.`, 'success');
     } catch (error) {
         const e = error as Error;
         showToast(e.message, 'error');
@@ -187,9 +195,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             email: email!,
             role: 'owner',
             pin,
-            storeInfo: { name: 'New Store', address: '', phone: '' }
+            storeInfo: { name: 'My New Store', address: '', phone: '' }
         };
         await setDoc(doc(db, "users", uid), newUser);
+        // No need to create an empty products collection, it will be created on demand.
         setIsPinVerified(false);
         showToast('Account created successfully!', 'success');
     } catch (error) {
@@ -236,7 +245,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   return (
-    <AppContext.Provider value={{ user, isAuthenticated: !!user, isPinVerified, loading, login, signup, logout, verifyPin, showToast, updateStoreInfo, processSale, inviteUser }}>
+    <AppContext.Provider value={{ user, isAuthenticated: !!user, isPinVerified, loading, login, signup, logout, verifyPin, showToast, updateStoreInfo, processSale, inviteUser, getProducts }}>
       <Toaster toasts={toasts} onDismiss={removeToast} />
       {children}
     </AppContext.Provider>

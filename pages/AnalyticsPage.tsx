@@ -2,23 +2,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Sale, Product } from '../types';
 import { Card, Button, Input } from '../components/UI';
+import { db } from '../firebase';
+import { collection, getDocs } from 'firebase/firestore';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area, LineChart, Line } from 'recharts';
 import { generateAnalyticsSummary } from '../services/geminiService';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
-
-// Mock Data
-const MOCK_SALES_HISTORY: Sale[] = Array.from({ length: 30 }).map((_, i) => ({
-    id: `s${i}`,
-    items: [{ productId: `p${(i % 5) + 1}`, name: `Product ${(i % 5) + 1}`, price: (Math.random() * 5) + 1, quantity: Math.floor(Math.random() * 3) + 1 }],
-    grandTotal: Math.random() * 50 + 10,
-    paymentMethod: 'Card',
-    timestamp: new Date(Date.now() - (30 - i) * 24 * 3600 * 1000)
-}));
-
-const MOCK_PRODUCTS: Product[] = Array.from({ length: 5 }).map((_, i) => ({
-    id: `p${i+1}`, name: `Product ${i+1}`, barcode: `${i+1}000`, price: (Math.random() * 5) + 1, quantity: 20, lowStockThreshold: 10
-}));
 
 const processData = (sales: Sale[]) => {
     const dailyRevenue: { [key: string]: number } = {};
@@ -91,20 +80,42 @@ const ReportTemplate: React.FC<{ sales: Sale[], products: Product[], aiSummary: 
 
 
 export const AnalyticsPage: React.FC = () => {
-    const { user } = useApp();
+    const { user, showToast } = useApp();
+    const [sales, setSales] = useState<Sale[]>([]);
+    const [products, setProducts] = useState<Product[]>([]);
     const [chartType, setChartType] = useState<'Bar' | 'Area' | 'Line'>('Bar');
     const [aiSummary, setAiSummary] = useState<string | null>(null);
     const [isGenerating, setIsGenerating] = useState(false);
     const reportRef = useRef<HTMLDivElement>(null);
 
-    const { dailyRevenueData, topProductsData } = processData(MOCK_SALES_HISTORY);
+    useEffect(() => {
+        const fetchData = async () => {
+            if (!user) return;
+            try {
+                const salesCollection = collection(db, "users", user.uid, "sales");
+                const salesSnapshot = await getDocs(salesCollection);
+                const salesData = salesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Sale));
+                setSales(salesData);
+
+                const productsCollection = collection(db, "users", user.uid, "products");
+                const productsSnapshot = await getDocs(productsCollection);
+                const productsData = productsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
+                setProducts(productsData);
+            } catch (error) {
+                showToast((error as Error).message, 'error');
+            }
+        };
+        fetchData();
+    }, [user, showToast]);
+
+    const { dailyRevenueData, topProductsData } = processData(sales);
 
     const generateReport = async () => {
         setIsGenerating(true);
         setAiSummary(null); // Clear previous summary
     
         // First, get AI summary
-        const summary = await generateAnalyticsSummary(MOCK_SALES_HISTORY, MOCK_PRODUCTS);
+        const summary = await generateAnalyticsSummary(sales, products);
         setAiSummary(summary);
     
         // This timeout ensures the state update has rendered the summary to the DOM
