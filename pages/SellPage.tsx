@@ -5,18 +5,8 @@ import { useApp } from '../AppContext';
 import { Card, Button, Input, Modal } from '../components/UI';
 import { ScanLine, Trash2, X, ShoppingCart, Send } from 'lucide-react';
 import BarcodeScanner from '../components/BarcodeScanner';
+import ManualEntryModal from '../components/ManualEntryModal';
 import { generateUpsellSuggestion } from '../services/geminiService';
-
-// Mock Data
-const MOCK_PRODUCTS: Product[] = [
-    { id: 'p1', name: 'Cosmic Coffee', barcode: '123456789', price: 3.50, quantity: 8, lowStockThreshold: 10 },
-    { id: 'p2', name: 'Stardust Donut', barcode: '987654321', price: 2.50, quantity: 25, lowStockThreshold: 15 },
-    { id: 'p3', name: 'Galaxy Muffin', barcode: '112233445', price: 3.00, quantity: 4, lowStockThreshold: 5 },
-    { id: 'p4', name: 'Nebula Nectar', barcode: '556677889', price: 4.75, quantity: 30, lowStockThreshold: 10 },
-    { id: 'p5', name: 'Meteor Munchies', barcode: '998877665', price: 5.20, quantity: 0, lowStockThreshold: 5 },
-    { id: 'p6', name: 'Butter', barcode: '0001', price: 1.50, quantity: 50, lowStockThreshold: 10 },
-    { id: 'p7', name: 'Soda', barcode: '0002', price: 2.00, quantity: 100, lowStockThreshold: 20 },
-];
 
 const FinalizeSaleModal: React.FC<{
   isOpen: boolean;
@@ -87,15 +77,29 @@ const FinalizeSaleModal: React.FC<{
 
 
 export const SellPage: React.FC = () => {
-    const { showToast, user } = useApp();
+    const { showToast, user, getProducts } = useApp();
+    const [products, setProducts] = useState<Product[]>([]);
     const [receipt, setReceipt] = useState<SaleItem[]>([]);
     const [isScannerOpen, setIsScannerOpen] = useState(false);
+    const [isManualEntryOpen, setIsManualEntryOpen] = useState(false);
     const [isFinalizeModalOpen, setIsFinalizeModalOpen] = useState(false);
     const [isProcessingSale, setIsProcessingSale] = useState(false);
     const [upsellSuggestion, setUpsellSuggestion] = useState('');
 
+    useEffect(() => {
+        const fetchProducts = async () => {
+            try {
+                const userProducts = await getProducts();
+                setProducts(userProducts);
+            } catch (error) {
+                showToast((error as Error).message, 'error');
+            }
+        };
+        fetchProducts();
+    }, [getProducts, showToast]);
+
     const findProductByBarcode = (barcode: string): Product | undefined => {
-        return MOCK_PRODUCTS.find(p => p.barcode === barcode);
+        return products.find(p => p.barcode === barcode);
     };
 
     const addToReceipt = (product: Product) => {
@@ -143,33 +147,21 @@ export const SellPage: React.FC = () => {
         showToast('Receipt cleared.', 'info');
     };
 
+    const { processSale } = useApp();
+
     const handleFinalizeSale = async (payload: { items: SaleItem[]; grandTotal: number; paymentMethod: 'Cash' | 'Card'; customerPhone: string | null; }) => {
-        if (!user) {
-            showToast('You must be logged in to process a sale.', 'error');
-            return;
-        }
         setIsProcessingSale(true);
         try {
-            const response = await fetch('/.netlify/functions/processSale', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ...payload, userId: user.uid })
+            await processSale({
+                items: payload.items,
+                grandTotal: payload.grandTotal,
+                paymentMethod: payload.paymentMethod,
+                customerPhone: payload.customerPhone,
             });
-
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({ error: 'An unknown error occurred.' }));
-                throw new Error(errorData.error || 'Failed to process sale.');
-            }
-
-            const result = await response.json();
-            console.log('Sale processed:', result);
-            
             clearReceipt();
-            showToast(`Sale of $${payload.grandTotal.toFixed(2)} recorded successfully!`, 'success');
             setIsFinalizeModalOpen(false);
-
         } catch (error) {
-            showToast((error as Error).message, 'error');
+            // Error is already shown by the context
         } finally {
             setIsProcessingSale(false);
         }
@@ -221,9 +213,14 @@ export const SellPage: React.FC = () => {
             <div className="lg:col-span-1">
                  <Card className="p-6 space-y-6 sticky top-8">
                      <h2 className="font-orbitron text-2xl text-white">Actions</h2>
-                     <Button onClick={() => setIsScannerOpen(true)} className="w-full !py-4 text-lg">
-                         <ScanLine className="mr-2"/> Open Scanner
-                     </Button>
+                     <div className="grid grid-cols-2 gap-2">
+                        <Button onClick={() => setIsScannerOpen(true)} className="w-full !py-4 text-lg">
+                            <ScanLine className="mr-2"/> Scan
+                        </Button>
+                        <Button onClick={() => setIsManualEntryOpen(true)} variant="secondary" className="w-full !py-4 text-lg">
+                            Manual Entry
+                        </Button>
+                     </div>
                      <div className="text-center space-y-2">
                          <p className="text-slate-400 font-semibold">GRAND TOTAL</p>
                          <p className="font-orbitron text-5xl text-sky-400">${grandTotal.toFixed(2)}</p>
@@ -248,6 +245,12 @@ export const SellPage: React.FC = () => {
                 grandTotal={grandTotal}
                 onFinalize={handleFinalizeSale}
                 isProcessing={isProcessingSale}
+            />
+
+            <ManualEntryModal
+                isOpen={isManualEntryOpen}
+                onClose={() => setIsManualEntryOpen(false)}
+                onAdd={handleScanSuccess}
             />
         </div>
     );

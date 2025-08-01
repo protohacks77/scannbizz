@@ -25,6 +25,16 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
     return <>{children}</>;
 };
 
+const RoleBasedRoute: React.FC<{ children: React.ReactNode, roles: string[] }> = ({ children, roles }) => {
+    const { user } = useApp();
+
+    if (user && roles.includes(user.role)) {
+        return <>{children}</>;
+    }
+
+    return <Navigate to="/" />;
+};
+
 const AppRoutes: React.FC = () => {
     return (
         <Routes>
@@ -37,9 +47,17 @@ const AppRoutes: React.FC = () => {
                             <PageWrapper>
                                 <Routes>
                                     <Route path="/" element={<DashboardPage />} />
-                                    <Route path="/stock" element={<StockPage />} />
+                                    <Route path="/stock" element={
+                                        <RoleBasedRoute roles={['owner', 'manager']}>
+                                            <StockPage />
+                                        </RoleBasedRoute>
+                                    } />
                                     <Route path="/sell" element={<SellPage />} />
-                                    <Route path="/analytics" element={<AnalyticsPage />} />
+                                    <Route path="/analytics" element={
+                                        <RoleBasedRoute roles={['owner', 'manager']}>
+                                            <AnalyticsPage />
+                                        </RoleBasedRoute>
+                                    } />
                                     <Route path="/settings" element={<SettingsPage />} />
                                     <Route path="*" element={<Navigate to="/" />} />
                                 </Routes>

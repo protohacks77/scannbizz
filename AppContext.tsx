@@ -1,25 +1,22 @@
 
 import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
-import { User, StoreInfo } from './types';
+import { User } from './types';
 import { Toaster, ToastMessage } from './components/UI';
+import { auth, db } from './firebase';
+import {
+    createUserWithEmailAndPassword,
+    signInWithEmailAndPassword,
+    onAuthStateChanged,
+    signOut,
+    User as FirebaseUser
+} from 'firebase/auth';
+import { doc, setDoc, getDoc, collection, addDoc, updateDoc, increment, getDocs } from 'firebase/firestore';
 
-// Mock API functions
-const mockApi = {
-    login: (email: string) => new Promise<{ user: User }>((resolve, reject) => {
-        if (email === "owner@scann.bizz") {
-            setTimeout(() => resolve({ user: { uid: '123', email, role: 'owner', storeInfo: { name: 'CyberStore', address: '123 Neon Lane', phone: '555-0101' } } }), 500);
-        } else {
-            setTimeout(() => reject(new Error("Invalid credentials")), 500);
-        }
-    }),
-    signup: (email: string) => new Promise<{ user: User }>((resolve) => {
-        setTimeout(() => resolve({ user: { uid: '123', email, role: 'owner', storeInfo: { name: 'New Store', address: '', phone: '' } } }), 500);
-    }),
-    verifyPin: (pin: string) => new Promise<boolean>((resolve) => {
-        setTimeout(() => resolve(pin === "1234"), 300);
-    })
-};
+import { StoreInfo } from './types';
 
+import { Sale, SaleItem } from './types';
+
+import { Product } from './types';
 
 interface AppContextType {
   user: User | null;
@@ -31,9 +28,20 @@ interface AppContextType {
   logout: () => void;
   verifyPin: (pin: string) => Promise<boolean>;
   showToast: (message: string, type: 'success' | 'error' | 'info') => void;
+  updateStoreInfo: (newInfo: StoreInfo) => Promise<void>;
+  processSale: (saleData: Omit<Sale, 'id' | 'timestamp'>) => Promise<void>;
+  inviteUser: (email: string, pass: string, pin: string, role: 'manager' | 'cashier') => Promise<void>;
+  getProducts: () => Promise<Product[]>;
+  addActivityLog: (message: string) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
+
+const defaultUser = {
+    email: "owner@scann.bizz",
+    password: "password123",
+    pin: "1234"
+};
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -42,21 +50,150 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   useEffect(() => {
-    const storedUser = localStorage.getItem('scannbizz_user');
-    if (storedUser) {
-        setUser(JSON.parse(storedUser));
-    }
-    setLoading(false);
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
+        if (firebaseUser) {
+            const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
+            if (userDoc.exists()) {
+                setUser({ ...firebaseUser, ...userDoc.data() } as User);
+            }
+        } else {
+            setUser(null);
+        }
+        setLoading(false);
+    });
+
+    const createDefaultUser = async () => {
+        try {
+            await signInWithEmailAndPassword(auth, defaultUser.email, defaultUser.password);
+        } catch (error) {
+            // If user does not exist, create it
+            if (error.code === 'auth/user-not-found') {
+                try {
+                    const userCredential = await createUserWithEmailAndPassword(auth, defaultUser.email, defaultUser.password);
+                    const { uid, email } = userCredential.user;
+                    const newUser: User = {
+                        uid,
+                        email: email!,
+                        role: 'owner',
+                        pin: defaultUser.pin,
+                        storeInfo: { name: 'CyberStore', address: '123 Neon Lane', phone: '555-0101' }
+                    };
+                    await setDoc(doc(db, "users", uid), newUser);
+                } catch (creationError) {
+                    console.error("Error creating default user:", creationError);
+                }
+            }
+        }
+    };
+
+    createDefaultUser();
+    return () => unsubscribe();
   }, []);
 
   const login = async (email: string, pass: string) => {
     setLoading(true);
     try {
-        const { user } = await mockApi.login(email);
-        setUser(user);
-        localStorage.setItem('scannbizz_user', JSON.stringify(user));
+        await signInWithEmailAndPassword(auth, email, pass);
         setIsPinVerified(false);
         showToast('Login successful!', 'success');
+    } catch (error) {
+        const e = error as Error;
+        showToast(e.message, 'error');
+        throw e;
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  const addActivityLog = async (message: string) => {
+    if (!user) return;
+    try {
+        const activityCollection = collection(db, "users", user.uid, "activity");
+        await addDoc(activityCollection, {
+            message,
+            timestamp: new Date()
+        });
+    } catch (error) {
+        console.error("Error adding activity log:", error);
+    }
+  };
+
+  const getProducts = async (): Promise<Product[]> => {
+    if (!user) throw new Error("User not authenticated");
+    const productsCollection = collection(db, "users", user.uid, "products");
+    const snapshot = await getDocs(productsCollection);
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
+  };
+
+  const inviteUser = async (email: string, pass: string, pin: string, role: 'manager' | 'cashier') => {
+    if (!user || user.role !== 'owner') {
+        throw new Error("You don't have permission to invite users.");
+    }
+    setLoading(true);
+    try {
+        const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
+        const { uid } = userCredential.user;
+
+        const newUser: User = {
+            uid,
+            email: email!,
+            role,
+            pin,
+            storeInfo: user.storeInfo
+        };
+
+        await setDoc(doc(db, "users", uid), newUser);
+        await addActivityLog(`Invited user ${email} as ${role}.`);
+        showToast(`User ${email} invited as ${role}.`, 'success');
+    } catch (error) {
+        const e = error as Error;
+        showToast(e.message, 'error');
+        throw e;
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  const processSale = async (saleData: Omit<Sale, 'id' | 'timestamp'>) => {
+    if (!user) throw new Error("User not authenticated");
+    setLoading(true);
+    try {
+        const salesCollection = collection(db, "users", user.uid, "sales");
+        await addDoc(salesCollection, {
+            ...saleData,
+            timestamp: new Date()
+        });
+
+        const productUpdates = saleData.items.map(item => {
+            const productRef = doc(db, "users", user.uid, "products", item.productId);
+            return updateDoc(productRef, {
+                quantity: increment(-item.quantity)
+            });
+        });
+
+        await Promise.all(productUpdates);
+
+        await addActivityLog(`Sale of $${saleData.grandTotal.toFixed(2)} recorded.`);
+
+        showToast('Sale processed successfully!', 'success');
+    } catch (error) {
+        const e = error as Error;
+        showToast(e.message, 'error');
+        throw e;
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  const updateStoreInfo = async (newInfo: StoreInfo) => {
+    if (!user) return;
+    setLoading(true);
+    try {
+        const userRef = doc(db, "users", user.uid);
+        await setDoc(userRef, { storeInfo: newInfo }, { merge: true });
+        setUser(prevUser => prevUser ? { ...prevUser, storeInfo: newInfo } : null);
+        await addActivityLog(`Store information updated.`);
+        showToast('Store information updated successfully!', 'success');
     } catch (error) {
         const e = error as Error;
         showToast(e.message, 'error');
@@ -69,10 +206,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const signup = async (email: string, pass: string, pin: string) => {
     setLoading(true);
     try {
-        const { user } = await mockApi.signup(email);
-        setUser(user);
-        localStorage.setItem('scannbizz_user', JSON.stringify(user));
-        setIsPinVerified(false); // They still need to enter PIN after signup
+        const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
+        const { uid } = userCredential.user;
+        const newUser: User = {
+            uid,
+            email: email!,
+            role: 'owner',
+            pin,
+            storeInfo: { name: 'My New Store', address: '', phone: '' }
+        };
+        await setDoc(doc(db, "users", uid), newUser);
+        // No need to create an empty products collection, it will be created on demand.
+        setIsPinVerified(false);
         showToast('Account created successfully!', 'success');
     } catch (error) {
         const e = error as Error;
@@ -83,18 +228,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const logout = () => {
-    setUser(null);
+  const logout = async () => {
+    await signOut(auth);
     setIsPinVerified(false);
-    localStorage.removeItem('scannbizz_user');
     showToast('You have been logged out.', 'info');
   };
 
   const verifyPin = async (pin: string) => {
     setLoading(true);
     try {
-        const isValid = await mockApi.verifyPin(pin);
-        if (isValid) {
+        if (user && user.pin === pin) {
             setIsPinVerified(true);
             showToast('PIN verified. Access granted.', 'success');
             return true;
@@ -120,7 +263,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   return (
-    <AppContext.Provider value={{ user, isAuthenticated: !!user, isPinVerified, loading, login, signup, logout, verifyPin, showToast }}>
+    <AppContext.Provider value={{ user, isAuthenticated: !!user, isPinVerified, loading, login, signup, logout, verifyPin, showToast, updateStoreInfo, processSale, inviteUser, getProducts, addActivityLog }}>
       <Toaster toasts={toasts} onDismiss={removeToast} />
       {children}
     </AppContext.Provider>

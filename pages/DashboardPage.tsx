@@ -7,20 +7,6 @@ import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Sale, Product, ActivityLog } from '../types';
 
-// Mock Data - In a real app, this would come from a Firestore hook
-const MOCK_SALES: Sale[] = [
-    { id: '1', items: [{ productId: 'p1', name: 'Cosmic Coffee', price: 3.50, quantity: 2 }], grandTotal: 7.00, paymentMethod: 'Card', timestamp: new Date(Date.now() - 3600000) },
-    { id: '2', items: [{ productId: 'p2', name: 'Stardust Donut', price: 2.50, quantity: 4 }], grandTotal: 10.00, paymentMethod: 'Cash', timestamp: new Date(Date.now() - 7200000) },
-];
-const MOCK_PRODUCTS: Product[] = [
-    { id: 'p1', name: 'Cosmic Coffee', barcode: '123', price: 3.50, quantity: 8, lowStockThreshold: 10 },
-    { id: 'p3', name: 'Galaxy Muffin', barcode: '456', price: 3.00, quantity: 4, lowStockThreshold: 5 },
-];
-const MOCK_ACTIVITY: ActivityLog[] = [
-    { id: 'a1', message: 'Sale of $7.00 recorded.', timestamp: new Date(Date.now() - 3600000)},
-    { id: 'a2', message: 'Product "Stardust Donut" quantity updated.', timestamp: new Date(Date.now() - 4800000)},
-    { id: 'a3', message: 'Sale of $10.00 recorded.', timestamp: new Date(Date.now() - 7200000)},
-];
 
 
 const ClockWidget = () => {
@@ -38,11 +24,48 @@ const ClockWidget = () => {
     );
 };
 
+import { db } from '../firebase';
+import { collection, getDocs, query, where, Timestamp } from 'firebase/firestore';
+
 export const DashboardPage: React.FC = () => {
-    const { user } = useApp();
-    const todaysRevenue = MOCK_SALES.reduce((acc, sale) => acc + sale.grandTotal, 0);
-    const itemsSoldToday = MOCK_SALES.reduce((acc, sale) => acc + sale.items.reduce((iAcc, item) => iAcc + item.quantity, 0), 0);
-    const lowStockItems = MOCK_PRODUCTS.filter(p => p.quantity <= p.lowStockThreshold);
+    const { user, showToast } = useApp();
+    const [sales, setSales] = useState<Sale[]>([]);
+    const [products, setProducts] = useState<Product[]>([]);
+    const [activity, setActivity] = useState<ActivityLog[]>([]);
+
+    useEffect(() => {
+        const fetchData = async () => {
+            if (!user) return;
+            try {
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const todayTimestamp = Timestamp.fromDate(today);
+
+                const salesQuery = query(collection(db, "users", user.uid, "sales"), where("timestamp", ">=", todayTimestamp));
+                const salesSnapshot = await getDocs(salesQuery);
+                const salesData = salesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Sale));
+                setSales(salesData);
+
+                const productsCollection = collection(db, "users", user.uid, "products");
+                const productsSnapshot = await getDocs(productsCollection);
+                const productsData = productsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
+                setProducts(productsData);
+
+                const activityQuery = query(collection(db, "users", user.uid, "activity"), where("timestamp", ">=", todayTimestamp));
+                const activitySnapshot = await getDocs(activityQuery);
+                const activityData = activitySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ActivityLog));
+                setActivity(activityData);
+
+            } catch (error) {
+                showToast((error as Error).message, 'error');
+            }
+        };
+        fetchData();
+    }, [user, showToast]);
+
+    const todaysRevenue = sales.reduce((acc, sale) => acc + sale.grandTotal, 0);
+    const itemsSoldToday = sales.reduce((acc, sale) => acc + sale.items.reduce((iAcc, item) => iAcc + item.quantity, 0), 0);
+    const lowStockItems = products.filter(p => p.quantity <= p.lowStockThreshold);
 
     const containerVariants = {
         hidden: { opacity: 0 },
@@ -132,10 +155,10 @@ export const DashboardPage: React.FC = () => {
                     <Card className="p-6">
                         <h3 className="font-orbitron text-xl text-sky-400 flex items-center gap-2 mb-4"><History/> Recent Activity</h3>
                         <div className="space-y-2 max-h-60 overflow-y-auto">
-                            {MOCK_ACTIVITY.map(log => (
+                            {activity.map(log => (
                                 <div key={log.id} className="flex justify-between items-center text-sm">
                                     <p className="text-slate-300">{log.message}</p>
-                                    <p className="text-slate-500">{log.timestamp.toLocaleTimeString()}</p>
+                                    <p className="text-slate-500">{log.timestamp.toDate().toLocaleTimeString()}</p>
                                 </div>
                             ))}
                         </div>
