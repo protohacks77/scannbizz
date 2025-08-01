@@ -32,6 +32,7 @@ interface AppContextType {
   processSale: (saleData: Omit<Sale, 'id' | 'timestamp'>) => Promise<void>;
   inviteUser: (email: string, pass: string, pin: string, role: 'manager' | 'cashier') => Promise<void>;
   getProducts: () => Promise<Product[]>;
+  addActivityLog: (message: string) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -104,6 +105,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const addActivityLog = async (message: string) => {
+    if (!user) return;
+    try {
+        const activityCollection = collection(db, "users", user.uid, "activity");
+        await addDoc(activityCollection, {
+            message,
+            timestamp: new Date()
+        });
+    } catch (error) {
+        console.error("Error adding activity log:", error);
+    }
+  };
+
   const getProducts = async (): Promise<Product[]> => {
     if (!user) throw new Error("User not authenticated");
     const productsCollection = collection(db, "users", user.uid, "products");
@@ -129,6 +143,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
 
         await setDoc(doc(db, "users", uid), newUser);
+        await addActivityLog(`Invited user ${email} as ${role}.`);
         showToast(`User ${email} invited as ${role}.`, 'success');
     } catch (error) {
         const e = error as Error;
@@ -158,6 +173,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         await Promise.all(productUpdates);
 
+        await addActivityLog(`Sale of $${saleData.grandTotal.toFixed(2)} recorded.`);
+
         showToast('Sale processed successfully!', 'success');
     } catch (error) {
         const e = error as Error;
@@ -175,6 +192,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const userRef = doc(db, "users", user.uid);
         await setDoc(userRef, { storeInfo: newInfo }, { merge: true });
         setUser(prevUser => prevUser ? { ...prevUser, storeInfo: newInfo } : null);
+        await addActivityLog(`Store information updated.`);
         showToast('Store information updated successfully!', 'success');
     } catch (error) {
         const e = error as Error;
@@ -245,7 +263,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   return (
-    <AppContext.Provider value={{ user, isAuthenticated: !!user, isPinVerified, loading, login, signup, logout, verifyPin, showToast, updateStoreInfo, processSale, inviteUser, getProducts }}>
+    <AppContext.Provider value={{ user, isAuthenticated: !!user, isPinVerified, loading, login, signup, logout, verifyPin, showToast, updateStoreInfo, processSale, inviteUser, getProducts, addActivityLog }}>
       <Toaster toasts={toasts} onDismiss={removeToast} />
       {children}
     </AppContext.Provider>
